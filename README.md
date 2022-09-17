@@ -1,1 +1,3 @@
-# Cuarzo-OS-Qt-Platform-Theme
+# Qt Platform Theme fro CuarzoOS
+
+* Heaven Global Menus
