@@ -12,6 +12,7 @@ HNMenuBar::HNMenuBar(HNData *data) : QPlatformMenuBar(), m_data(data)
 HNMenuBar::~HNMenuBar()
 {
     qDebug() << "Destroy menu bar" << this;
+    hn_object_destroy(object());
 }
 
 void HNMenuBar::insertMenu(QPlatformMenu *menu, QPlatformMenu *before)
@@ -62,8 +63,8 @@ void HNMenuBar::handleReparent(QWindow *newParentWindow)
     if(m_window)
     {
         connect(m_window, &QWindow::activeChanged, this, &HNMenuBar::windowActivatedChanged);
-        //if(m_window->isActive())
-            //hn_top_bar_set_active((hn_top_bar*)m_object);
+        if(m_window->isActive())
+            hn_top_bar_set_active((hn_top_bar*)m_object);
     }
 }
 
@@ -71,10 +72,17 @@ QPlatformMenu *HNMenuBar::menuForTag(quintptr tag) const
 {
     qDebug() << "HNMenuBar::menuForTag" << tag;
 
-    hn_object *obj = hn_object_get_by_id(m_data->heaven, (hn_object_id)tag);
+    hn_node *node = hn_object_get_children(m_object)->begin;
 
-    if(obj && hn_object_get_type(obj) == HN_OBJECT_TYPE_MENU)
-        return (QPlatformMenu*)hn_object_get_user_data(obj);
+    while(node)
+    {
+        HNMenu *menu = (HNMenu*)hn_object_get_user_data(node->data);
+
+        if(menu->tag() == tag)
+            return menu;
+
+        node = node->next;
+    }
 
     return nullptr;
 }
@@ -83,7 +91,10 @@ QPlatformMenu *HNMenuBar::createMenu() const
 {
     qDebug() << "HNMenuBar::createMenu";
 
-    return new HNMenu(m_data);
+    HNMenu *menu = new HNMenu(m_data);
+    hn_menu_add_to_top_bar((hn_menu*)menu->object(), (hn_top_bar*)object(), NULL);
+
+    return menu;
 }
 
 hn_object *HNMenuBar::object() const

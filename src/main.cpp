@@ -1,6 +1,7 @@
 #include <qpa/qplatformthemeplugin.h>
 #include <QGuiApplication>
 #include "PlatformTheme.h"
+#include <QDebug>
 
 QT_BEGIN_NAMESPACE
 

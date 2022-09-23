@@ -2,8 +2,6 @@
 #define PLATFORMTHEME_H
 
 #include <qpa/qplatformtheme.h>
-#include <QObject>
-
 #include "Common.h"
 
 QT_BEGIN_NAMESPACE
@@ -19,8 +17,8 @@ public:
     QVariant themeHint(ThemeHint hint) const override;
     const QFont *font(Font type) const override;
     QPlatformMenuBar *createPlatformMenuBar() const override;
-    QPlatformMenu *createPlatformMenu() const override;
-    QPlatformMenuItem *createPlatformMenuItem() const override;
+    //QPlatformMenu *createPlatformMenu() const override;
+    //QPlatformMenuItem *createPlatformMenuItem() const override;
     hn_client *heaven() const;
 
 private:

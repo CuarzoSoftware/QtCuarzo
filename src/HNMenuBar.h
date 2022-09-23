@@ -1,12 +1,7 @@
 #ifndef QDBUSMENUBAR_P_H
 #define QDBUSMENUBAR_P_H
 
-#include <QHash>
-#include <QString>
 #include <QWindow>
-
-#include <qpa/qplatformmenu.h>
-
 #include "Common.h"
 
 QT_BEGIN_NAMESPACE

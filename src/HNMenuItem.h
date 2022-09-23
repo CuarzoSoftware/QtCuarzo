@@ -1,14 +1,12 @@
 #ifndef HNMENUITEM_H
 #define HNMENUITEM_H
 
-#include <qpa/qplatformmenu.h>
-
 #include "Common.h"
-#include <QDebug>
 
 QT_BEGIN_NAMESPACE
 
 class PlatformTheme;
+class HNMenu;
 
 class HNMenuItem : public QPlatformMenuItem
 {
@@ -27,22 +25,36 @@ public:
     void setCheckable(bool checkable) override;
     void setChecked(bool isChecked) override;
 #if QT_CONFIG(shortcut)
-    void setShortcut(const QKeySequence& shortcut) override { qDebug() << "HNMenuItem::setShortcut" << shortcut; };
+    void setShortcut(const QKeySequence& shortcut) override;
 #endif
     void setEnabled(bool enabled) override;
     void setIconSize(int size) override;
 
+    void setTag(quintptr tag) override;
+    quintptr tag()const override;
+
+    void restoreBackup();
+
     hn_client *heaven() const;
     hn_object *object() const;
+    HNObjectRef &ref();
+
+    HNMenu *menu = nullptr;
 
 private:
     mutable HNData *m_data;
+    HNObjectRef m_ref;
     hn_object *m_object = nullptr;
+
     QString m_text;
+    QString m_shortcut;
     QIcon m_icon;
     bool m_visible = true;
     bool m_isSeparator = false;
     bool m_isCheckable = false;
+    bool m_checked = false;
+    bool m_enabled = true;
+
 
 
 };

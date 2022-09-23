@@ -10,9 +10,21 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-find_package(Qt6Core REQUIRED)
-find_package(Qt6Widgets REQUIRED)
-find_package(Qt6Gui CONFIG REQUIRED Private)
+find_package(Qt5 COMPONENTS Core)
+
+if (NOT Qt5_FOUND)
+    find_package(Qt6Core REQUIRED)
+    find_package(Qt6Widgets REQUIRED)
+    find_package(Qt6Gui CONFIG REQUIRED Private)
+endif()
+
+if (Qt5_FOUND)
+    find_package(Qt5Core REQUIRED)
+    find_package(Qt5Widgets REQUIRED)
+    find_package(Qt5Gui CONFIG REQUIRED Private)
+endif()
+
+
 
 set (SRCS
     main.cpp
@@ -29,19 +41,31 @@ set (SRCS
 
 add_library(cuarzo MODULE ${SRCS})
 
+set_property(TARGET cuarzo PROPERTY CXX_STANDARD 11)
+
 target_compile_definitions(cuarzo
     PRIVATE
         "QT_NO_FOREACH"
         "LIB_FM_QT_SONAME=\"${LIB_FM_QT_SONAME}\""
 )
 
-target_link_libraries(cuarzo PRIVATE
-    Qt6::GuiPrivate
-    Qt6::Widgets
-    Qt6::Core
-    Heaven-Client
-)
+if (NOT Qt5_FOUND)
+    target_link_libraries(cuarzo PRIVATE
+        Qt6::GuiPrivate
+        Qt6::Widgets
+        Qt6::Core
+        Heaven-Client
+    )
+endif()
 
+if (Qt5_FOUND)
+    target_link_libraries(cuarzo PRIVATE
+        Qt5::GuiPrivate
+        Qt5::Widgets
+        Qt5::Core
+        Heaven-Client
+    )
+endif()
 
 # execute the command "qmake -query QT_INSTALL_PLUGINS" to get the path of plugins dir.
 execute_process(COMMAND ${QT_QMAKE_EXECUTABLE} -query QT_INSTALL_PLUGINS

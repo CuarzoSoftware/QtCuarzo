@@ -31,12 +31,14 @@ PlatformTheme::~PlatformTheme(){}
 
 QVariant PlatformTheme::themeHint(QPlatformTheme::ThemeHint hintType) const
 {
-    return hintType;
+    return QPlatformTheme::themeHint(hintType);
 }
 
 const QFont* PlatformTheme::font(Font type) const
 {
-    return QPlatformTheme::font(type);
+    QFont *f = new QFont("Inter");
+    f->setPixelSize(13);
+    return f;
 }
 
 QPlatformMenuBar *PlatformTheme::createPlatformMenuBar() const
@@ -44,6 +46,7 @@ QPlatformMenuBar *PlatformTheme::createPlatformMenuBar() const
     return new HNMenuBar(&m_data);
 }
 
+/*
 QPlatformMenu *PlatformTheme::createPlatformMenu() const
 {
     qDebug() << "PLATFORM MENU";
@@ -55,7 +58,7 @@ QPlatformMenuItem *PlatformTheme::createPlatformMenuItem() const
     qDebug() << "PLATFORM MENU ITEM";
     return new HNMenuItem(&m_data);
 }
-
+*/
 hn_client *PlatformTheme::heaven() const
 {
     return m_data.heaven;
