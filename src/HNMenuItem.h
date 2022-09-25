@@ -33,27 +33,29 @@ public:
     void setTag(quintptr tag) override;
     quintptr tag()const override;
 
-    void restoreBackup();
-
+    ItemClone *createClone();
     hn_client *heaven() const;
-    hn_object *object() const;
-    HNObjectRef &ref();
 
     HNMenu *menu = nullptr;
 
-private:
-    mutable HNData *m_data;
-    HNObjectRef m_ref;
-    hn_object *m_object = nullptr;
+    hn_pixel *pixels = nullptr;
+    u_int32_t w,h;
 
     QString m_text;
     QString m_shortcut;
-    QIcon m_icon;
     bool m_visible = true;
     bool m_isSeparator = false;
     bool m_isCheckable = false;
     bool m_checked = false;
     bool m_enabled = true;
+
+    QList<ItemClone*>clones;
+
+private:
+    mutable HNData *m_data;
+    quintptr m_tag;
+
+
 
 
 

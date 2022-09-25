@@ -9,51 +9,79 @@ HNMenuBar::HNMenuBar(HNData *data) : QPlatformMenuBar(), m_data(data)
     m_object = hn_top_bar_create(m_data->heaven, this);
 }
 
+MenuClone *findMenuClone(HNMenu *menu, HNMenuBar *bar)
+{
+    for(MenuClone *clone : qAsConst(menu->clones))
+    {
+        if(clone->bar == bar)
+            return clone;
+    }
+
+    return nullptr;
+}
+
 HNMenuBar::~HNMenuBar()
 {
-    qDebug() << "Destroy menu bar" << this;
+    for(MenuClone *child : qAsConst(children))
+    {
+        HNMenu *menu = (HNMenu*)hn_object_get_user_data(child->object);
+        menu->clones.removeOne(child);
+        hn_object_destroy(child->object);
+        delete child;
+    }
+
     hn_object_destroy(object());
 }
 
 void HNMenuBar::insertMenu(QPlatformMenu *menu, QPlatformMenu *before)
 {
-    qDebug() << "HNMenuBar::insertMenu" << menu << before;
+    HNMenu *m = (HNMenu*)menu;
+    HNMenu *b = (HNMenu*)before;
 
-    if(menu)
+    MenuClone *clone = findMenuClone(m, this);
+
+    if(clone)
     {
-        HNMenu *m = (HNMenu*)menu;
+        children.removeOne(clone);
+    }
+    else
+    {
+        clone = m->createClone(object());
+        clone->bar = this;
+    }
 
-        if(before)
-        {
-            HNMenu *b = (HNMenu*)before;
-            hn_menu_add_to_top_bar((hn_menu*)m->object(), (hn_top_bar*)object(), (hn_menu*)b->object());
-        }
-        else
-            hn_menu_add_to_top_bar((hn_menu*)m->object(), (hn_top_bar*)object(), NULL);
+    if(before)
+    {
+        MenuClone *beforeClone = findMenuClone(b,this);
+
+        children.insert(children.indexOf(beforeClone), clone);
+
+        hn_menu_add_to_top_bar(clone->object, (hn_top_bar*)object(), beforeClone->object);
+    }
+    else
+    {
+        children.append(clone);
+        hn_menu_add_to_top_bar(clone->object, (hn_top_bar*)object(), nullptr);
     }
 
 }
 
 void HNMenuBar::removeMenu(QPlatformMenu *menu)
 {
-    qDebug() << "HNMenuBar::removeMenu" << menu;
-
-    if(menu)
-    {
-        HNMenu *m = (HNMenu*)menu;
-        hn_object_remove_fom_parent(m->object());
-    }
-
+    HNMenu *m = (HNMenu*)menu;
+    MenuClone *clone = findMenuClone(m, this);
+    children.removeOne(clone);
+    m->clones.removeOne(clone);
+    hn_object_destroy(clone->object);
+    delete clone;
 }
 
 void HNMenuBar::syncMenu(QPlatformMenu *menuItem)
 {
-    qDebug() << "HNMenuBar::syncMenu" << menuItem;
-}
+ }
 
 void HNMenuBar::handleReparent(QWindow *newParentWindow)
 {
-    qDebug() << "HNMenuBar::handleReparent" << newParentWindow;
 
     if(m_window)
         disconnect(m_window, &QWindow::activeChanged, this, &HNMenuBar::windowActivatedChanged);
@@ -70,18 +98,11 @@ void HNMenuBar::handleReparent(QWindow *newParentWindow)
 
 QPlatformMenu *HNMenuBar::menuForTag(quintptr tag) const
 {
-    qDebug() << "HNMenuBar::menuForTag" << tag;
-
-    hn_node *node = hn_object_get_children(m_object)->begin;
-
-    while(node)
+    for(MenuClone *child : children)
     {
-        HNMenu *menu = (HNMenu*)hn_object_get_user_data(node->data);
-
+        HNMenu *menu = (HNMenu*)hn_object_get_user_data(child->object);
         if(menu->tag() == tag)
             return menu;
-
-        node = node->next;
     }
 
     return nullptr;
@@ -89,11 +110,7 @@ QPlatformMenu *HNMenuBar::menuForTag(quintptr tag) const
 
 QPlatformMenu *HNMenuBar::createMenu() const
 {
-    qDebug() << "HNMenuBar::createMenu";
-
     HNMenu *menu = new HNMenu(m_data);
-    hn_menu_add_to_top_bar((hn_menu*)menu->object(), (hn_top_bar*)object(), NULL);
-
     return menu;
 }
 
@@ -106,7 +123,6 @@ void HNMenuBar::windowActivatedChanged()
 {
     if(m_window->isActive())
     {
-        qDebug() << "New acttive window";
         hn_top_bar_set_active((hn_top_bar*)m_object);
     }
 }

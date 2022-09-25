@@ -3,7 +3,7 @@
 
 #include <QWindow>
 #include "Common.h"
-
+#include "HNMenu.h"
 QT_BEGIN_NAMESPACE
 
 class PlatformTheme;
@@ -25,8 +25,9 @@ public:
     QPlatformMenu *createMenu() const override;
 
     hn_object *object() const;
-private slots:
 
+    QList<MenuClone*>children;
+private slots:
     void windowActivatedChanged();
 private:
     mutable HNData *m_data;

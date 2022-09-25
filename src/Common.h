@@ -5,6 +5,9 @@
 #include <Heaven/Heaven-Client.h>
 #include <QDebug>
 
+class HNMenuBar;
+class HNMenu;
+
 struct HNData
 {
     hn_client *heaven = nullptr;
@@ -42,5 +45,24 @@ inline hn_pixel *qIconToHNPixels(const QIcon &icon, u_int32_t *width, u_int32_t 
 
     return pixels;
 }
+
+struct MenuClone
+{
+    hn_menu *object = nullptr;
+    HNMenuBar *bar = nullptr;
+    HNMenu *menu = nullptr;
+};
+
+struct ItemClone
+{
+    hn_object *object = nullptr;
+    MenuClone *menu = nullptr;
+    MenuClone *subMenu = nullptr;
+};
+
+
+bool loopedMenu(HNMenu *menu, hn_object *object);
+
+void destroyObjectAndChildren(hn_object *object);
 
 #endif // COMMON_H

@@ -46,19 +46,6 @@ QPlatformMenuBar *PlatformTheme::createPlatformMenuBar() const
     return new HNMenuBar(&m_data);
 }
 
-/*
-QPlatformMenu *PlatformTheme::createPlatformMenu() const
-{
-    qDebug() << "PLATFORM MENU";
-    return new HNMenu(&m_data);
-}
-
-QPlatformMenuItem *PlatformTheme::createPlatformMenuItem() const
-{
-    qDebug() << "PLATFORM MENU ITEM";
-    return new HNMenuItem(&m_data);
-}
-*/
 hn_client *PlatformTheme::heaven() const
 {
     return m_data.heaven;

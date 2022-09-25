@@ -6,6 +6,8 @@
 class PlatformTheme;
 class QPlatformMenuItem;
 class HNMenuItem;
+class HNMenuBar;
+
 
 class HNMenu : public QPlatformMenu
 {
@@ -34,20 +36,25 @@ public:
     void setTag(quintptr tag) override;
     quintptr tag()const override;
 
+    MenuClone *createClone(hn_object *parent);
+
 #if QT_VERSION < 0x060000
 
 #endif
 
     hn_client *heaven() const;
-    hn_object *object() const;
-    HNObjectRef &ref();
 
     HNMenuItem *action = nullptr;
 
+    QString m_text;
+    bool m_visible = true;
+    bool m_enabled = true;
+
+    QList<HNMenuItem*>children;
+    QList<MenuClone*>clones;
 private:
     mutable HNData *m_data;
-    HNObjectRef m_ref;
-    hn_object *m_object = nullptr;
+    quintptr m_tag;
 
 };
 
