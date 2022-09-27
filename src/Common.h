@@ -2,7 +2,7 @@
 #define COMMON_H
 
 #include <qpa/qplatformmenu.h>
-#include <Heaven/Heaven-Client.h>
+#include <Heaven-Client.h>
 #include <QDebug>
 
 class HNMenuBar;

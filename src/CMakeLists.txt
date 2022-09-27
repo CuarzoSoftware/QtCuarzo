@@ -67,15 +67,23 @@ if (Qt5_FOUND)
     )
 endif()
 
-# execute the command "qmake -query QT_INSTALL_PLUGINS" to get the path of plugins dir.
-execute_process(COMMAND ${QT_QMAKE_EXECUTABLE} -query QT_INSTALL_PLUGINS
-    OUTPUT_VARIABLE QT_PLUGINS_DIR
-    OUTPUT_STRIP_TRAILING_WHITESPACE
+target_include_directories(cuarzo PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../Heaven/src/lib>
 )
-if(QT_PLUGINS_DIR)
-    message(STATUS "Qt plugin directory:" "${QT_PLUGINS_DIR}")
-else()
-    message(FATAL_ERROR "Qt plugin directory cannot be detected.")
-endif()
 
+set(CMAKE_INSTALL_RPATH "${HEAVEN_LIBRARY_PATH}")
+
+# execute the command "qmake -query QT_INSTALL_PLUGINS" to get the path of plugins dir.
+#execute_process(COMMAND ${QT_QMAKE_EXECUTABLE} -query QT_INSTALL_PLUGINS
+#    OUTPUT_VARIABLE QT_PLUGINS_DIR
+#    OUTPUT_STRIP_TRAILING_WHITESPACE
+#)
+#if(QT_PLUGINS_DIR)
+#    message(STATUS "Qt plugin directory:" "${QT_PLUGINS_DIR}")
+#else()
+#    message(FATAL_ERROR "Qt plugin directory cannot be detected.")
+#endif()
+
+
+set(QT_PLUGINS_DIR /usr/lib/x86_64-linux-gnu/qt5/plugins)
 install(TARGETS cuarzo LIBRARY DESTINATION "${QT_PLUGINS_DIR}/platformthemes")
