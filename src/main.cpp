@@ -1,173 +1,294 @@
-#include <qpa/qplatformthemeplugin.h>
-#include <QGuiApplication>
+#include "Plugin.h"
 #include "PlatformTheme.h"
-#include <QDebug>
+#include "HNMenu.h"
+#include "HNMenuItem.h"
+
+#include <QGuiApplication>
+#include <QCoreApplication>
 #include <QSocketNotifier>
-#include <HNMenu.h>
-#include <HNMenuItem.h>
+#include <QByteArray>
+#include <QTimer>
+
+#include <qpa/qplatformnativeinterface.h>
+
+#include <CZ/Core/CZCore.h>
+
+#include <wayland-client.h>
+#include "lvr-private-handle-client.h"
+
+#include <cstring>
 
 QT_BEGIN_NAMESPACE
 
-static void disconnected_from_server(hn_client *)
+// ---------------------------------------------------------------------------
+// Heaven object-tree helpers
+// ---------------------------------------------------------------------------
+
+HNObject *hnParent(HNObject *object) noexcept
 {
+    auto *wp = dynamic_cast<HNWithParent*>(object);
+    return wp ? wp->parent() : nullptr;
 }
 
-static void object_destroy(hn_object *)
+HNObject *hnNextSibling(HNObject *object) noexcept
 {
-
-}
-
-static void server_action_invoke(hn_action *)
-{
-
-}
-
-static void server_toggle_set_checked(hn_toggle *, hn_bool)
-{
-
-}
-
-static void server_option_set_active(hn_option *, hn_select *)
-{
-
-}
-
-static void server_send_custom_event(hn_client *, void *, u_int32_t size)
-{
-
-}
-
-hn_client_events_interface heavenClientInterface
-{
-    &disconnected_from_server,
-    &object_destroy,
-    &server_action_invoke,
-    &server_toggle_set_checked,
-    &server_option_set_active,
-    &server_send_custom_event
-};
-
-class PlatformThemePlugin : public QPlatformThemePlugin
-{
-    Q_OBJECT
-    Q_PLUGIN_METADATA(IID QPlatformThemeFactoryInterface_iid FILE "cuarzo-platformtheme.json")
-
-public:
-    PlatformThemePlugin(QObject *parent = nullptr) : QPlatformThemePlugin(parent)
-    {
-    }
-
-    QPlatformTheme *create(const QString &key, const QStringList &paramList) override
-    {
-        Q_UNUSED(key)
-        Q_UNUSED(paramList)
-
-        QString appName = "Qt Application";
-
-        if(QGuiApplication::applicationName().length() != 0)
-            appName = QGuiApplication::applicationName();
-
-        heaven = hn_client_create(NULL, appName.toUtf8(), NULL, &heavenClientInterface);
-
-        if(heaven)
-        {
-            connect(QGuiApplication::instance(), &QCoreApplication::applicationNameChanged, this, &PlatformThemePlugin::appNameChanged);
-
-            QSocketNotifier *sn = new QSocketNotifier(hn_client_get_fd(heaven), QSocketNotifier::Type::Read, this);
-            sn->setEnabled(true);
-            connect(sn, &QSocketNotifier::activated, this, &PlatformThemePlugin::heavenEvent);
-
-            return new PlatformTheme(heaven);
-        }
-
-
+    auto *wp = dynamic_cast<HNWithParent*>(object);
+    if (!wp || !wp->parent())
         return nullptr;
-    }
-private:
-    hn_client *heaven = nullptr;
 
-private slots:
-    void appNameChanged()
+    auto *wc = dynamic_cast<HNWithChildren*>(wp->parent());
+    if (!wc)
+        return nullptr;
+
+    const auto &list = wc->children();
+    for (auto it = list.begin(); it != list.end(); ++it)
     {
-        hn_client_set_app_name(heaven, QGuiApplication::applicationName().toUtf8());
-    }
-
-    void heavenEvent()
-    {
-        hn_client_dispatch_events(heaven, 0);
-    }
-};
-
-bool loopedMenu(HNMenu *menu, hn_object *object)
-{
-    if(!object)
-    {
-        return false;
-    }
-
-    if(hn_object_get_user_data(object) == menu)
-    {
-        return true;
-    }
-
-    hn_object *parent = hn_object_get_parent(object);
-
-    if(parent)
-    {
-        if(hn_object_get_user_data(parent) == menu)
+        if (*it == wp)
         {
-            return true;
+            auto next = std::next(it);
+            return next == list.end() ? nullptr : dynamic_cast<HNObject*>(*next);
         }
-        return loopedMenu(menu, parent);
+    }
+
+    return nullptr;
+}
+
+std::string hnIconName(const QIcon &icon) noexcept
+{
+    return icon.name().toStdString();
+}
+
+bool loopedMenu(HNMenu *menu, HNObject *object)
+{
+    if (!object)
+        return false;
+
+    if (object->userData == menu)
+        return true;
+
+    return loopedMenu(menu, hnParent(object));
+}
+
+// Returns the owning clone's shared_ptr for a Heaven object, or nullptr.
+static std::shared_ptr<HNObject> hnCloneSharedPtr(HNObject *object)
+{
+    if (!object || !object->userData)
+        return nullptr;
+
+    if (object->type() == HNObject::Menu)
+    {
+        HNMenu *m = static_cast<HNMenu*>(object->userData);
+        for (MenuClone *c : m->clones)
+            if (c->object.get() == object)
+                return c->object;
     }
     else
     {
-        return false;
+        HNMenuItem *i = static_cast<HNMenuItem*>(object->userData);
+        for (ItemClone *c : i->clones)
+            if (c->object.get() == object)
+                return c->object;
+    }
+
+    return nullptr;
+}
+
+void destroyObjectAndChildren(std::shared_ptr<HNObject> object)
+{
+    if (!object)
+        return;
+
+    // Recursively destroy children first.
+    if (auto *wc = dynamic_cast<HNWithChildren*>(object.get()))
+    {
+        while (!wc->children().empty())
+        {
+            HNObject *child = dynamic_cast<HNObject*>(wc->children().back());
+
+            if (std::shared_ptr<HNObject> childPtr = hnCloneSharedPtr(child))
+                destroyObjectAndChildren(childPtr);
+            else if (auto *cwp = dynamic_cast<HNWithParent*>(child))
+                cwp->setParent(nullptr); // safety: detach unknown child
+        }
+    }
+
+    // Unlink the object's clone from its Qt owner and release it.
+    if (object->type() == HNObject::Menu)
+    {
+        if (HNMenu *m = static_cast<HNMenu*>(object->userData))
+            for (MenuClone *c : m->clones)
+                if (c->object.get() == object.get())
+                {
+                    m->clones.removeOne(c);
+                    c->object.reset();
+                    delete c;
+                    break;
+                }
+    }
+    else
+    {
+        if (HNMenuItem *i = static_cast<HNMenuItem*>(object->userData))
+            for (ItemClone *c : i->clones)
+                if (c->object.get() == object.get())
+                {
+                    i->clones.removeOne(c);
+                    c->object.reset();
+                    delete c;
+                    break;
+                }
     }
 }
 
-void destroyObjectAndChildren(hn_object *object)
+// ---------------------------------------------------------------------------
+// lvr_private_handle: bind on Qt's wl_display and forward the handle to Heaven
+// ---------------------------------------------------------------------------
+
+namespace {
+
+struct PrivateHandleState
 {
-    const hn_array *children = hn_object_get_children(object);
+    std::shared_ptr<HNClient> heaven;
+    lvr_private_handle_manager *manager = nullptr;
+};
 
-    while(!hn_array_empty((hn_array*)children))
+void privateHandle(void *data, lvr_private_handle_manager *manager, const char *handle)
+{
+    auto *st = static_cast<PrivateHandleState*>(data);
+    if (st->heaven)
     {
-        destroyObjectAndChildren(children->begin->data);
+        st->heaven->setPrivateHandle(handle);
+        st->heaven->commit();
+    }
+    lvr_private_handle_manager_destroy(manager);
+    st->manager = nullptr;
+}
 
-        hn_object_destroy(children->begin->data);
+const lvr_private_handle_manager_listener privateHandleListener {
+    .handle = &privateHandle
+};
+
+void registryGlobal(void *data, wl_registry *registry, uint32_t name, const char *interface, uint32_t version)
+{
+    Q_UNUSED(version)
+    auto *st = static_cast<PrivateHandleState*>(data);
+
+    if (!st->manager && strcmp(interface, lvr_private_handle_manager_interface.name) == 0)
+    {
+        st->manager = static_cast<lvr_private_handle_manager*>(
+            wl_registry_bind(registry, name, &lvr_private_handle_manager_interface, 1));
+        lvr_private_handle_manager_add_listener(st->manager, &privateHandleListener, st);
+    }
+}
+
+void registryGlobalRemove(void *, wl_registry *, uint32_t) {}
+
+const wl_registry_listener registryListener {
+    .global = &registryGlobal,
+    .global_remove = &registryGlobalRemove
+};
+
+// Retrieves Qt's internal wl_display through the platform native interface.
+wl_display *qtWaylandDisplay()
+{
+    QPlatformNativeInterface *ni = QGuiApplication::platformNativeInterface();
+    if (!ni)
+        return nullptr;
+
+    wl_display *dpy = static_cast<wl_display*>(ni->nativeResourceForIntegration(QByteArrayLiteral("wl_display")));
+    if (!dpy)
+        dpy = static_cast<wl_display*>(ni->nativeResourceForIntegration(QByteArrayLiteral("display")));
+    return dpy;
+}
+
+// Binds lvr_private_handle_manager on Qt's display. Events are delivered asynchronously by Qt's own
+// Wayland dispatch, so this never blocks nor interferes with Qt's read cycle (no roundtrip here).
+//
+// The platform theme plugin is created before QtWayland has connected its wl_display, so this is
+// scheduled onto the event loop and retried a few times until the display becomes available.
+void setupPrivateHandle(std::shared_ptr<HNClient> heaven, int attemptsLeft = 50)
+{
+    wl_display *dpy = qtWaylandDisplay();
+
+    if (!dpy)
+    {
+        if (attemptsLeft > 0)
+            QTimer::singleShot(50, qApp, [heaven, attemptsLeft]{
+                setupPrivateHandle(heaven, attemptsLeft - 1);
+            });
+        return;
     }
 
-    if(hn_object_get_type(object) == HN_OBJECT_TYPE_MENU)
-    {
-        HNMenu *m = (HNMenu*)hn_object_get_user_data(object);
+    auto *st = new PrivateHandleState{ heaven, nullptr }; // lives for the process
+    wl_registry *registry = wl_display_get_registry(dpy);
+    wl_registry_add_listener(registry, &registryListener, st);
+    wl_display_flush(dpy);
+}
 
-        for(MenuClone *mClone : qAsConst(m->clones))
-        {
-            if(mClone->object == object)
-            {
-                m->clones.removeOne(mClone);
-                delete mClone;
-                break;
-            }
-        }
-    }
-    else
-    {
-        HNMenuItem *i = (HNMenuItem*)hn_object_get_user_data(object);
+} // namespace
 
-        for(ItemClone *iClone : qAsConst(i->clones))
-        {
-            if(iClone->object == object)
-            {
-                i->clones.removeOne(iClone);
-                delete iClone;
-                break;
-            }
-        }
-    }
-    hn_object_destroy(object);
+// ---------------------------------------------------------------------------
+// Platform theme plugin
+// ---------------------------------------------------------------------------
+
+PlatformThemePlugin::PlatformThemePlugin(QObject *parent) : QPlatformThemePlugin(parent)
+{
+}
+
+QPlatformTheme *PlatformThemePlugin::create(const QString &key, const QStringList &paramList)
+{
+    Q_UNUSED(key)
+    Q_UNUSED(paramList)
+
+    m_core = CZ::CZCore::GetOrMake();
+    m_heaven = HNClient::GetOrMake();
+
+    if (!m_core || !m_heaven)
+        return nullptr;
+
+    QString appName = QStringLiteral("Qt Application");
+    if (!QGuiApplication::applicationName().isEmpty())
+        appName = QGuiApplication::applicationName();
+
+    m_heaven->setName(appName.toStdString());
+    m_heaven->commit();
+
+    connect(QGuiApplication::instance(), &QCoreApplication::applicationNameChanged,
+            this, &PlatformThemePlugin::appNameChanged);
+
+    // Drive the Heaven (D-Bus) event loop from Qt's event loop.
+    //
+    // The QSocketNotifier must be created once the application's event dispatcher is up and running.
+    // create() runs during platform-theme initialization, before QCoreApplication::exec(), so a
+    // notifier created here never registers with the event loop: outgoing traffic still gets flushed
+    // opportunistically, but incoming D-Bus events (the bar appearing, click deliveries) are never
+    // delivered. Defer it to the first event-loop iteration, exactly like setupPrivateHandle below.
+    QTimer::singleShot(0, this, [this]{
+        QSocketNotifier *sn = new QSocketNotifier(m_core->fd(), QSocketNotifier::Read, this);
+        connect(sn, &QSocketNotifier::activated, this, &PlatformThemePlugin::heavenEvent);
+        m_core->dispatch(0);
+    });
+    m_core->dispatch(0);
+
+    // Obtain the compositor-assigned private handle (Wayland) and forward it to Heaven. Deferred to
+    // the event loop because QtWayland has not connected its wl_display yet at plugin-creation time.
+    QTimer::singleShot(0, this, [heaven = m_heaven]{ setupPrivateHandle(heaven); });
+
+    return new PlatformTheme(m_heaven);
+}
+
+void PlatformThemePlugin::appNameChanged()
+{
+    if (!m_heaven)
+        return;
+
+    m_heaven->setName(QGuiApplication::applicationName().toStdString());
+    m_heaven->commit();
+}
+
+void PlatformThemePlugin::heavenEvent()
+{
+    if (m_core)
+        m_core->dispatch(0);
 }
 
 QT_END_NAMESPACE
-
-#include "main.moc"

@@ -20,26 +20,25 @@ public:
     void setMenu(QPlatformMenu *menu) override;
     void setVisible(bool isVisible) override;
     void setIsSeparator(bool isSeparator) override;
-    void setFont(const QFont &font) override {};
+    void setFont(const QFont &font) override { Q_UNUSED(font) }
     void setRole(MenuRole role) override;
     void setCheckable(bool checkable) override;
     void setChecked(bool isChecked) override;
 #if QT_CONFIG(shortcut)
-    void setShortcut(const QKeySequence& shortcut) override;
+    void setShortcut(const QKeySequence &shortcut) override;
 #endif
     void setEnabled(bool enabled) override;
     void setIconSize(int size) override;
 
     void setTag(quintptr tag) override;
-    quintptr tag()const override;
+    quintptr tag() const override;
 
     ItemClone *createClone();
-    hn_client *heaven() const;
+    std::shared_ptr<HNClient> heaven() const;
 
     HNMenu *menu = nullptr;
 
-    hn_pixel *pixels = nullptr;
-    u_int32_t w,h;
+    std::string m_icon; // freedesktop icon name
 
     QString m_text;
     QString m_shortcut;
@@ -49,16 +48,11 @@ public:
     bool m_checked = false;
     bool m_enabled = true;
 
-    QList<ItemClone*>clones;
+    QList<ItemClone*> clones;
 
 private:
     mutable HNData *m_data;
-    quintptr m_tag;
-
-
-
-
-
+    quintptr m_tag = 0;
 };
 
 QT_END_NAMESPACE

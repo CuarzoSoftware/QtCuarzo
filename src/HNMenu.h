@@ -1,5 +1,5 @@
-#ifndef HNMENU_H
-#define HNMENU_H
+#ifndef QTCUARZO_HNMENU_H
+#define QTCUARZO_HNMENU_H
 
 #include "Common.h"
 
@@ -7,7 +7,6 @@ class PlatformTheme;
 class QPlatformMenuItem;
 class HNMenuItem;
 class HNMenuBar;
-
 
 class HNMenu : public QPlatformMenu
 {
@@ -26,7 +25,7 @@ public:
     void setEnabled(bool enabled) override;
     void setVisible(bool visible) override;
 
-    void dismiss() override { } // Closes this and all its related menu popups
+    void dismiss() override {} // Closes this and all its related menu popups
 
     QPlatformMenuItem *menuItemAt(int position) const override;
     QPlatformMenuItem *menuItemForTag(quintptr tag) const override;
@@ -34,30 +33,25 @@ public:
     QPlatformMenu *createSubMenu() const override;
 
     void setTag(quintptr tag) override;
-    quintptr tag()const override;
+    quintptr tag() const override;
 
-    MenuClone *createClone(hn_object *parent);
+    MenuClone *createClone(HNObject *parent);
 
-#if QT_VERSION < 0x060000
-
-#endif
-
-    hn_client *heaven() const;
+    std::shared_ptr<HNClient> heaven() const;
 
     HNMenuItem *action = nullptr;
 
     QString m_text;
+    std::string m_icon;
     bool m_visible = true;
     bool m_enabled = true;
 
-    QList<HNMenuItem*>children;
-    QList<MenuClone*>clones;
+    QList<HNMenuItem*> children;
+    QList<MenuClone*> clones;
+
 private:
     mutable HNData *m_data;
-    quintptr m_tag;
-
+    quintptr m_tag = 0;
 };
-
-
 
 #endif // HNMENU_H

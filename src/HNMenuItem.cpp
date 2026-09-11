@@ -1,158 +1,187 @@
 #include "HNMenuItem.h"
 #include "HNMenu.h"
-#include <QDebug>
 
 QT_BEGIN_NAMESPACE
 
-HNMenuItem::HNMenuItem(HNData *data) : QPlatformMenuItem() , m_data(data)
+// Builds the Heaven object of the type currently implied by the item's flags, with all its
+// properties applied and (for actions/toggles) the click signal wired to Qt's activated().
+static std::shared_ptr<HNObject> makeItemObject(HNMenuItem *item)
+{
+    std::shared_ptr<HNObject> obj;
+
+    if (item->m_isSeparator)
+    {
+        obj = HNDivider::Make(item->m_text.toStdString());
+    }
+    else if (item->m_isCheckable)
+    {
+        obj = HNToggle::Make(item->m_text.toStdString(), item->m_icon,
+                             item->m_shortcut.toStdString(), item->m_checked, item->m_enabled);
+    }
+    else
+    {
+        obj = HNAction::Make(item->m_text.toStdString(), item->m_icon,
+                             item->m_shortcut.toStdString(), item->m_enabled);
+    }
+
+    if (!obj)
+        return obj;
+
+    obj->userData = item;
+
+    if (obj->type() != HNObject::Divider)
+    {
+        obj->onClicked.subscribe(obj.get(), [item](HNObject*){ emit item->activated(); });
+
+        if (!item->m_icon.empty())
+            if (auto *ic = dynamic_cast<HNWithIcon*>(obj.get()))
+                ic->setIconFlat(false);
+    }
+
+    return obj;
+}
+
+// Swaps every (non-submenu) clone's Heaven object for a freshly built one of the correct type,
+// re-inserting it at the same position. Used when the item's type changes (separator/checkable).
+static void recreateItemClones(HNMenuItem *item)
+{
+    for (ItemClone *iClone : item->clones)
+    {
+        if (iClone->subMenu)
+            continue; // placed as a submenu; the hidden object is not in the tree
+
+        HNObject *parent = hnParent(iClone->object.get());
+        HNObject *before = hnNextSibling(iClone->object.get());
+
+        iClone->object.reset();
+        iClone->object = makeItemObject(item);
+
+        if (before)
+            hnInsertBefore(iClone->object.get(), before);
+        else if (parent)
+            hnSetParent(iClone->object.get(), parent);
+    }
+}
+
+HNMenuItem::HNMenuItem(HNData *data) : QPlatformMenuItem(), m_data(data)
 {
 }
 
 HNMenuItem::~HNMenuItem()
 {
-    if(menu)
-    {
+    if (menu)
         menu->action = nullptr;
-    }
 
-    while(!clones.empty())
+    while (!clones.empty())
     {
         ItemClone *iClone = clones.last();
-        hn_object_destroy(iClone->object);
+
+        if (iClone->subMenu)
+            destroyObjectAndChildren(iClone->subMenu->object);
+
+        iClone->object.reset();
         clones.removeLast();
         delete iClone;
     }
+
+    m_data->commit();
 }
 
 void HNMenuItem::setText(const QString &text)
 {
     m_text = text;
     m_text = m_text.remove("&");
+    const std::string t = m_text.toStdString();
 
-    for(ItemClone *iClone : qAsConst(clones))
+    for (ItemClone *iClone : clones)
     {
-        if(iClone->subMenu)
+        if (iClone->subMenu)
         {
-            hn_menu_set_label((hn_menu*)iClone->subMenu->object, m_text.toUtf8());
+            iClone->subMenu->object->setTitle(t);
             continue;
         }
 
-        switch(hn_object_get_type(iClone->object))
-        {
-            case HN_OBJECT_TYPE_ACTION:
-            {
-                hn_action_set_label((hn_action*)iClone->object, m_text.toUtf8());
-            }break;
-            case HN_OBJECT_TYPE_TOGGLE:
-            {
-                hn_toggle_set_label((hn_toggle*)iClone->object, m_text.toUtf8());
-            }break;
-            case HN_OBJECT_TYPE_SEPARATOR:
-            {
-                hn_separator_set_label((hn_separator*)iClone->object, m_text.toUtf8());
-            }break;
-        }
+        if (auto *wt = dynamic_cast<HNWithTitle*>(iClone->object.get()))
+            wt->setTitle(t);
     }
+
+    m_data->commit();
 }
 
 void HNMenuItem::setIcon(const QIcon &icon)
 {
-    hn_pixel *pixels = qIconToHNPixels(icon, &w, &h);
+    m_icon = hnIconName(icon);
 
-    if(this->pixels)
-        delete []this->pixels;
-
-    this->pixels = pixels;
-
-    for(ItemClone *iClone : qAsConst(clones))
+    for (ItemClone *iClone : clones)
     {
-        if(menu)
+        if (iClone->subMenu)
         {
-            hn_menu_set_icon((hn_menu*)iClone->menu->object, pixels, w, h);
+            iClone->subMenu->object->setIcon(m_icon);
+            iClone->subMenu->object->setIconFlat(false);
         }
 
-        if(hn_object_get_type(iClone->object) == HN_OBJECT_TYPE_ACTION)
+        if (auto *ic = dynamic_cast<HNWithIcon*>(iClone->object.get()))
         {
-            hn_action_set_icon((hn_action*)iClone->object, pixels, w, h);
+            ic->setIcon(m_icon);
+            ic->setIconFlat(false);
         }
     }
-}
 
+    m_data->commit();
+}
 
 void HNMenuItem::setMenu(QPlatformMenu *mm)
 {
-    HNMenu *m = (HNMenu*)mm;
+    HNMenu *m = static_cast<HNMenu*>(mm);
 
-    for(ItemClone *iClone : qAsConst(clones))
+    for (ItemClone *iClone : clones)
     {
-        if(m)
+        if (m)
         {
-            hn_object *parent = hn_object_get_parent(iClone->object);
-            const hn_node *node;
-            hn_object *before = NULL;
+            HNObject *parent = hnParent(iClone->object.get());
+            HNObject *before = hnNextSibling(iClone->object.get());
 
-            if(parent)
-            {
-                node = hn_object_get_parent_link(iClone->object);
-
-                if(node && node->next)
-                    before = node->next->data;
-            }
-
-            hn_object_remove_fom_parent(iClone->object);
+            hnSetParent(iClone->object.get(), nullptr); // remove the plain item from the tree
 
             iClone->subMenu = m->createClone(parent);
 
-            if(parent)
-                hn_menu_add_to_menu((hn_menu*)iClone->subMenu->object, (hn_menu*)parent, before);
+            if (before)
+                iClone->subMenu->object->insertBefore(before);
+            else if (parent)
+                iClone->subMenu->object->setParent(parent);
 
-            hn_menu_set_label((hn_menu*)iClone->subMenu->object, m_text.toUtf8());
-            hn_menu_set_icon((hn_menu*)iClone->subMenu->object, pixels, w, h);
-        }
-        else
-        {
-            if(this->menu)
+            iClone->subMenu->object->setTitle(m_text.toStdString());
+
+            if (!m_icon.empty())
             {
-                hn_object *parent = hn_object_get_parent(iClone->subMenu->object);
-                const hn_node *node;
-                hn_object *before = NULL;
-
-                if(parent)
-                {
-                    node = hn_object_get_parent_link(iClone->subMenu->object);
-
-                    if(node && node->next)
-                        before = node->next->data;
-                }
-
-                // Restore menu
-                destroyObjectAndChildren(iClone->subMenu->object);
-
-                switch(hn_object_get_type(iClone->object))
-                {
-                    case HN_OBJECT_TYPE_ACTION:
-                        hn_action_add_to_menu((hn_action*)iClone->object,(hn_menu*)parent,before);
-                        break;
-                    case HN_OBJECT_TYPE_SEPARATOR:
-                        hn_separator_add_to_menu((hn_separator*)iClone->object,(hn_menu*)parent,before);
-                        break;
-                    case HN_OBJECT_TYPE_TOGGLE:
-                        hn_toggle_add_to_menu((hn_toggle*)iClone->object,(hn_menu*)parent,before);
-                        break;
-                }
-
+                iClone->subMenu->object->setIcon(m_icon);
+                iClone->subMenu->object->setIconFlat(false);
             }
+        }
+        else if (menu && iClone->subMenu)
+        {
+            HNObject *parent = hnParent(iClone->subMenu->object.get());
+            HNObject *before = hnNextSibling(iClone->subMenu->object.get());
+
+            destroyObjectAndChildren(iClone->subMenu->object);
+            iClone->subMenu = nullptr;
+
+            if (before)
+                hnInsertBefore(iClone->object.get(), before);
+            else if (parent)
+                hnSetParent(iClone->object.get(), parent);
         }
     }
 
-    if(this->menu)
-        this->menu->action = nullptr;
+    if (menu)
+        menu->action = nullptr;
 
-    this->menu = (HNMenu*)m;
+    menu = m;
 
-    if(this->menu)
-        this->menu->action = this;
+    if (menu)
+        menu->action = this;
 
+    m_data->commit();
 }
 
 void HNMenuItem::setVisible(bool isVisible)
@@ -162,203 +191,71 @@ void HNMenuItem::setVisible(bool isVisible)
 
 void HNMenuItem::setIsSeparator(bool isSeparator)
 {
+    if (m_isSeparator == isSeparator)
+        return;
 
     m_isSeparator = isSeparator;
-
-    for(ItemClone *iClone : qAsConst(clones))
-    {
-        if(isSeparator)
-        {
-            if(hn_object_get_type(iClone->object) == HN_OBJECT_TYPE_SEPARATOR)
-                continue;
-
-            hn_object *parent = hn_object_get_parent(iClone->object);
-            const hn_node *node;
-            hn_object *before = NULL;
-
-            if(parent)
-            {
-                node = hn_object_get_parent_link(iClone->object);
-
-                if(node && node->next)
-                    before = node->next->data;
-            }
-
-            hn_object_destroy(iClone->object);
-            iClone->object = hn_separator_create(m_data->heaven, this);
-            hn_separator_set_label((hn_separator*)iClone->object, m_text.toUtf8());
-
-            if(parent)
-                hn_separator_add_to_menu((hn_separator*)iClone->object, (hn_menu*)parent, before);
-        }
-        else
-        {
-            if(hn_object_get_type(iClone->object) != HN_OBJECT_TYPE_SEPARATOR)
-                continue;
-
-            hn_object *parent = hn_object_get_parent(iClone->object);
-            const hn_node *node;
-            hn_object *before = NULL;
-
-            if(parent)
-            {
-                node = hn_object_get_parent_link(iClone->object);
-
-                if(node && node->next)
-                    before = node->next->data;
-            }
-
-            hn_object_destroy(iClone->object);
-            iClone->object = hn_action_create(m_data->heaven, this);
-
-            hn_action_set_label((hn_action*)iClone->object, m_text.toUtf8());
-            hn_action_set_enabled((hn_action*)iClone->object, (hn_bool)m_enabled);
-            hn_action_set_icon((hn_action*)iClone->object, pixels, w, h);
-
-            if(parent)
-                hn_action_add_to_menu((hn_action*)iClone->object, (hn_menu*)parent, before);
-        }
-    }
-
+    recreateItemClones(this);
+    m_data->commit();
 }
 
-void HNMenuItem::setRole(MenuRole role) {}
+void HNMenuItem::setRole(MenuRole)
+{
+}
 
 #if QT_CONFIG(shortcut)
-void HNMenuItem::setShortcut(const QKeySequence& shortcut)
+void HNMenuItem::setShortcut(const QKeySequence &shortcut)
 {
     m_shortcut = shortcut.toString();
     m_shortcut = m_shortcut.remove(" ");
+    const std::string s = m_shortcut.toStdString();
 
-    for(ItemClone *iClone : qAsConst(clones))
-    {
-        switch(hn_object_get_type(iClone->object))
-        {
-            case HN_OBJECT_TYPE_ACTION:
-            {
-                if(m_shortcut.isEmpty())
-                    hn_action_set_shortcuts((hn_action*)iClone->object, NULL);
-                else
-                    hn_action_set_shortcuts((hn_action*)iClone->object, m_shortcut.toUtf8());
-            }break;
-            case HN_OBJECT_TYPE_TOGGLE:
-            {
-                if(m_shortcut.isEmpty())
-                    hn_toggle_set_shortcuts((hn_toggle*)iClone->object, NULL);
-                else
-                    hn_toggle_set_shortcuts((hn_toggle*)iClone->object, m_shortcut.toUtf8());
-            }break;
-        }
-    }
+    for (ItemClone *iClone : clones)
+        if (auto *ws = dynamic_cast<HNWithShortcut*>(iClone->object.get()))
+            ws->setShortcut(s);
+
+    m_data->commit();
 }
 #endif
 
 void HNMenuItem::setCheckable(bool checkable)
 {
+    if (m_isCheckable == checkable)
+        return;
 
     m_isCheckable = checkable;
-
-
-    for(ItemClone *iClone : qAsConst(clones))
-    {
-        if(checkable)
-        {
-            if(hn_object_get_type(iClone->object) == HN_OBJECT_TYPE_TOGGLE)
-                return;
-
-            hn_object *parent = hn_object_get_parent(iClone->object);
-            const hn_node *node;
-            hn_object *before = NULL;
-
-            if(parent)
-            {
-                node = hn_object_get_parent_link(iClone->object);
-
-                if(node && node->next)
-                    before = node->next->data;
-            }
-
-            hn_object_destroy(iClone->object);
-
-            iClone->object = hn_toggle_create(m_data->heaven, this);
-
-            hn_toggle_set_checked((hn_toggle*)iClone->object, (hn_bool)m_checked);
-            hn_toggle_set_label((hn_toggle*)iClone->object, m_text.toUtf8());
-            hn_toggle_set_enabled((hn_toggle*)iClone->object, (hn_bool)m_enabled);
-
-            if(parent)
-                hn_toggle_add_to_menu((hn_toggle*)iClone->object, (hn_menu*)parent, before);
-        }
-        else
-        {
-            if(hn_object_get_type(iClone->object) != HN_OBJECT_TYPE_TOGGLE)
-                return;
-
-            hn_object *parent = hn_object_get_parent(iClone->object);
-            const hn_node *node;
-            hn_object *before = NULL;
-
-            if(parent)
-            {
-                node = hn_object_get_parent_link(iClone->object);
-
-                if(node && node->next)
-                    before = node->next->data;
-            }
-
-            hn_object_destroy(iClone->object);
-            iClone->object = hn_action_create(m_data->heaven, this);
-
-            hn_action_set_label((hn_action*)iClone->object, m_text.toUtf8());
-            hn_action_set_enabled((hn_action*)iClone->object, (hn_bool)m_enabled);
-            hn_action_set_icon((hn_action*)iClone->object, pixels, w, h);
-
-            if(parent)
-                hn_action_add_to_menu((hn_action*)iClone->object, (hn_menu*)parent, before);
-        }
-    }
+    recreateItemClones(this);
+    m_data->commit();
 }
 
 void HNMenuItem::setChecked(bool isChecked)
 {
-
     m_checked = isChecked;
 
-    for(ItemClone *iClone : qAsConst(clones))
-    {
-        if(hn_object_get_type(iClone->object) == HN_OBJECT_TYPE_TOGGLE)
-            hn_toggle_set_checked((hn_toggle*)iClone->object, (hn_bool)isChecked);
-    }
+    for (ItemClone *iClone : clones)
+        if (auto *t = dynamic_cast<HNToggle*>(iClone->object.get()))
+            t->setChecked(isChecked);
+
+    m_data->commit();
 }
 
 void HNMenuItem::setEnabled(bool enabled)
 {
     m_enabled = enabled;
 
-    if(menu)
-    {
+    if (menu)
         menu->setEnabled(enabled);
-    }
 
-    for(ItemClone *iClone : qAsConst(clones))
-    {
+    for (ItemClone *iClone : clones)
+        if (auto *e = dynamic_cast<HNWithEnabled*>(iClone->object.get()))
+            e->setEnabled(enabled);
 
-        switch(hn_object_get_type(iClone->object))
-        {
-            case HN_OBJECT_TYPE_ACTION:
-            {
-                hn_action_set_enabled((hn_action*)iClone->object, (hn_bool)enabled);
-            }break;
-            case HN_OBJECT_TYPE_TOGGLE:
-            {
-                hn_toggle_set_enabled((hn_toggle*)iClone->object, (hn_bool)enabled);
-            }break;
-        }
-    }
-
+    m_data->commit();
 }
 
-void HNMenuItem::setIconSize(int size) {}
+void HNMenuItem::setIconSize(int)
+{
+}
 
 void HNMenuItem::setTag(quintptr tag)
 {
@@ -373,35 +270,14 @@ quintptr HNMenuItem::tag() const
 ItemClone *HNMenuItem::createClone()
 {
     ItemClone *clone = new ItemClone;
-
-    if(m_isSeparator)
-    {
-        clone->object = hn_separator_create(heaven(), this);
-        hn_separator_set_label((hn_separator*)clone->object, m_text.toUtf8());
-    }
-    else if(m_isCheckable)
-    {
-        clone->object = hn_toggle_create(heaven(), this);
-        hn_toggle_set_label((hn_toggle*)clone->object, m_text.toUtf8());
-        hn_toggle_set_enabled((hn_toggle*)clone->object, m_enabled);
-    }
-    else
-    {
-        clone->object = hn_action_create(heaven(), this);
-        hn_action_set_label((hn_action*)clone->object, m_text.toUtf8());
-        hn_action_set_enabled((hn_action*)clone->object, m_enabled);
-        hn_action_set_icon((hn_action*)clone->object, pixels, w, h);
-    }
-
+    clone->object = makeItemObject(this);
     clones.append(clone);
     return clone;
 }
 
-hn_client *HNMenuItem::heaven() const
+std::shared_ptr<HNClient> HNMenuItem::heaven() const
 {
     return m_data->heaven;
 }
-
-
 
 QT_END_NAMESPACE

@@ -2,67 +2,107 @@
 #define COMMON_H
 
 #include <qpa/qplatformmenu.h>
-#include <Heaven-Client.h>
-#include <QDebug>
+#include <QIcon>
+#include <QString>
+#include <memory>
+
+#include <CZ/Heaven/Client/HNClient.h>
+#include <CZ/Heaven/Client/HNTopbar.h>
+#include <CZ/Heaven/Client/HNMenu.h>
+#include <CZ/Heaven/Client/HNAction.h>
+#include <CZ/Heaven/Client/HNToggle.h>
+#include <CZ/Heaven/Client/HNDivider.h>
+#include <CZ/Heaven/Client/HNWithParent.h>
+#include <CZ/Heaven/Client/HNWithChildren.h>
+
+using namespace CZ;
+
+// The Qt platform classes below are named HN* (HNMenuBar/HNMenu/HNMenuItem) and the Heaven client
+// classes live in CZ::HNClientAPI. Both define a class called HNMenu, so instead of pulling the whole
+// namespace in (which would make HNMenu ambiguous) we import the Heaven types individually and expose
+// the Heaven menu under a distinct alias.
+using CZ::HNClientAPI::HNObject;
+using CZ::HNClientAPI::HNClient;
+using CZ::HNClientAPI::HNTopbar;
+using CZ::HNClientAPI::HNAction;
+using CZ::HNClientAPI::HNToggle;
+using CZ::HNClientAPI::HNDivider;
+using CZ::HNClientAPI::HNWithParent;
+using CZ::HNClientAPI::HNWithChildren;
+using CZ::HNClientAPI::HNWithTitle;
+using CZ::HNClientAPI::HNWithIcon;
+using CZ::HNClientAPI::HNWithShortcut;
+using CZ::HNClientAPI::HNWithEnabled;
+using HNHeavenMenu = CZ::HNClientAPI::HNMenu;
 
 class HNMenuBar;
 class HNMenu;
+class HNMenuItem;
 
+/**
+ * @brief Shared Heaven client, handed to every platform object.
+ */
 struct HNData
 {
-    hn_client *heaven = nullptr;
+    std::shared_ptr<HNClient> heaven;
+
+    /// Flush all pending Heaven changes to the bar.
+    void commit() const noexcept { if (heaven) heaven->commit(); }
 };
 
-struct HNObjectRef
-{
-    void *object = nullptr;
-    quintptr tag;
-};
-
-inline hn_pixel *qIconToHNPixels(const QIcon &icon, u_int32_t *width, u_int32_t *height)
-{
-    hn_pixel *pixels = NULL;
-
-    QImage img = icon.pixmap(icon.actualSize(QSize(64, 64))).toImage();
-    int totalPixels = img.width()*img.height();
-
-    if(totalPixels > 0)
-    {
-        *width = img.width();
-        *height = img.height();
-        pixels = new hn_pixel[totalPixels];
-        u_int32_t i = 0;
-
-        for(u_int32_t x = 0; x < *width; x++)
-        {
-            for(u_int32_t y = 0; y < *height; y++)
-            {
-                pixels[i] = (hn_pixel)qAlpha(img.pixel(x,y));
-                i++;
-            }
-        }
-    }
-
-    return pixels;
-}
-
+/**
+ * @brief One Heaven menu object per placement of a Qt menu.
+ *
+ * A single Qt QPlatformMenu can appear in more than one place at once (several menu bars, or reused
+ * as a submenu in different parents). Heaven objects have a single parent, so each placement is a
+ * separate Heaven object — a "clone".
+ */
 struct MenuClone
 {
-    hn_menu *object = nullptr;
-    HNMenuBar *bar = nullptr;
-    HNMenu *menu = nullptr;
+    std::shared_ptr<HNHeavenMenu> object; ///< The Heaven menu (Type::Menu).
+    HNMenuBar *bar  = nullptr;      ///< Owning menu bar, if placed directly in a topbar.
+    HNMenu    *menu = nullptr;      ///< Owning Qt menu, if nested as a submenu.
 };
 
+/**
+ * @brief One Heaven object per placement of a Qt menu item (action / toggle / divider).
+ */
 struct ItemClone
 {
-    hn_object *object = nullptr;
-    MenuClone *menu = nullptr;
-    MenuClone *subMenu = nullptr;
+    std::shared_ptr<HNObject> object;  ///< The Heaven action / toggle / divider.
+    MenuClone *menu    = nullptr;      ///< The menu placement this item lives in.
+    MenuClone *subMenu = nullptr;      ///< The submenu placement, if this item opens a submenu.
 };
 
+// --- parent helpers (setParent/insertBefore live on HNWithParent, not HNObject) ---
 
-bool loopedMenu(HNMenu *menu, hn_object *object);
+inline void hnSetParent(HNObject *object, HNObject *parent) noexcept
+{
+    if (auto *wp = dynamic_cast<HNWithParent*>(object))
+        wp->setParent(parent);
+}
 
-void destroyObjectAndChildren(hn_object *object);
+inline void hnInsertBefore(HNObject *object, HNObject *sibling) noexcept
+{
+    if (auto *wp = dynamic_cast<HNWithParent*>(object))
+        wp->insertBefore(sibling);
+}
+
+// --- helpers (defined in main.cpp) ---
+
+/// @brief The Heaven parent of @p object, or nullptr.
+HNObject *hnParent(HNObject *object) noexcept;
+
+/// @brief The next sibling of @p object within its parent, or nullptr.
+HNObject *hnNextSibling(HNObject *object) noexcept;
+
+/// @brief The freedesktop icon name of @p icon (empty if it is not a themed icon).
+std::string hnIconName(const QIcon &icon) noexcept;
+
+/// @brief Whether @p object (or one of its ancestors) is represented by @p menu (cycle guard).
+bool loopedMenu(HNMenu *menu, HNObject *object);
+
+/// @brief Destroys @p object and every descendant, unlinking their clones from the Qt objects.
+void destroyObjectAndChildren(std::shared_ptr<HNObject> object);
 
 #endif // COMMON_H

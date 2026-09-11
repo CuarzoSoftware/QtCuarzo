@@ -1,9 +1,10 @@
-#ifndef QDBUSMENUBAR_P_H
-#define QDBUSMENUBAR_P_H
+#ifndef HNMENUBAR_H
+#define HNMENUBAR_H
 
 #include <QWindow>
 #include "Common.h"
 #include "HNMenu.h"
+
 QT_BEGIN_NAMESPACE
 
 class PlatformTheme;
@@ -24,17 +25,19 @@ public:
     QPlatformMenu *menuForTag(quintptr tag) const override;
     QPlatformMenu *createMenu() const override;
 
-    hn_object *object() const;
+    HNTopbar *object() const { return m_object.get(); }
 
-    QList<MenuClone*>children;
+    QList<MenuClone*> children;
+
 private slots:
     void windowActivatedChanged();
+
 private:
     mutable HNData *m_data;
-    hn_object *m_object = nullptr;
+    std::shared_ptr<HNTopbar> m_object;
     QWindow *m_window = nullptr;
 };
 
 QT_END_NAMESPACE
 
-#endif // QDBUSMENUBAR_P_H
+#endif // HNMENUBAR_H

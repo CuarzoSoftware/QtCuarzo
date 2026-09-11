@@ -11,19 +11,17 @@ class PlatformTheme : public QObject, public QPlatformTheme
     Q_OBJECT
 
 public:
-    PlatformTheme(hn_client *heaven);
+    PlatformTheme(std::shared_ptr<HNClient> heaven);
     ~PlatformTheme() override;
 
     QVariant themeHint(ThemeHint hint) const override;
     const QFont *font(Font type) const override;
     QPlatformMenuBar *createPlatformMenuBar() const override;
-    //QPlatformMenu *createPlatformMenu() const override;
-    //QPlatformMenuItem *createPlatformMenuItem() const override;
-    hn_client *heaven() const;
+
+    std::shared_ptr<HNClient> heaven() const;
 
 private:
     mutable HNData m_data;
-
 };
 
 QT_END_NAMESPACE
