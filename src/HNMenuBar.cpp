@@ -26,6 +26,7 @@ HNMenuBar::~HNMenuBar()
     {
         HNMenu *menu = static_cast<HNMenu*>(child->object->userData);
         menu->clones.removeOne(child);
+        hnUnlinkSubMenu(child);
         child->object.reset(); // destroys the Heaven menu
         delete child;
     }
@@ -76,6 +77,7 @@ void HNMenuBar::removeMenu(QPlatformMenu *menu)
 
     children.removeOne(clone);
     m->clones.removeOne(clone);
+    hnUnlinkSubMenu(clone);
     clone->object.reset();
     delete clone;
 
@@ -124,7 +126,7 @@ void HNMenuBar::windowActivatedChanged()
     if (m_window && m_window->isActive() && m_object)
     {
         m_data->heaven->setActiveTopbar(m_object.get());
-        m_data->commit();
+        m_data->commitNow(); // active topbar switch must be immediate
     }
 }
 

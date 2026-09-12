@@ -120,6 +120,7 @@ void destroyObjectAndChildren(std::shared_ptr<HNObject> object)
                 if (c->object.get() == object.get())
                 {
                     m->clones.removeOne(c);
+                    hnUnlinkSubMenu(c);
                     c->object.reset();
                     delete c;
                     break;
@@ -132,6 +133,7 @@ void destroyObjectAndChildren(std::shared_ptr<HNObject> object)
                 if (c->object.get() == object.get())
                 {
                     i->clones.removeOne(c);
+                    hnUnlinkSubMenu(c);
                     c->object.reset();
                     delete c;
                     break;
@@ -254,6 +256,23 @@ QPlatformTheme *PlatformThemePlugin::create(const QString &key, const QStringLis
 
     connect(QGuiApplication::instance(), &QCoreApplication::applicationNameChanged,
             this, &PlatformThemePlugin::appNameChanged);
+
+    // Default application-menu actions coming from the bar. About/Settings are routed to the app's
+    // own role-tagged actions (if any); Quit falls back to a plain application quit.
+    m_heaven->onAbout.subscribe(&m_heavenListener, []{
+        if (auto *item = HNMenuItem::itemForRole(QPlatformMenuItem::AboutRole))
+            emit item->activated();
+    });
+    m_heaven->onSettings.subscribe(&m_heavenListener, []{
+        if (auto *item = HNMenuItem::itemForRole(QPlatformMenuItem::PreferencesRole))
+            emit item->activated();
+    });
+    m_heaven->onQuit.subscribe(&m_heavenListener, []{
+        if (auto *item = HNMenuItem::itemForRole(QPlatformMenuItem::QuitRole))
+            emit item->activated();
+        else
+            QCoreApplication::quit();
+    });
 
     // Drive the Heaven (D-Bus) event loop from Qt's event loop.
     //

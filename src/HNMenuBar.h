@@ -2,6 +2,7 @@
 #define HNMENUBAR_H
 
 #include <QWindow>
+#include <QPointer>
 #include "Common.h"
 #include "HNMenu.h"
 
@@ -35,7 +36,9 @@ private slots:
 private:
     mutable HNData *m_data;
     std::shared_ptr<HNTopbar> m_object;
-    QWindow *m_window = nullptr;
+    // QPointer so it auto-nulls if the parent window is destroyed during reparenting; a raw pointer
+    // would dangle and crash the disconnect() in handleReparent().
+    QPointer<QWindow> m_window;
 };
 
 QT_END_NAMESPACE

@@ -1,7 +1,17 @@
 #include "HNMenuItem.h"
 #include "HNMenu.h"
+#include <QHash>
 
 QT_BEGIN_NAMESPACE
+
+// Most recently registered item per MenuRole, so the Heaven app-menu events (About/Settings/Quit)
+// can be routed to the application's own role-tagged actions.
+static QHash<int, HNMenuItem*> s_roleItems;
+
+HNMenuItem *HNMenuItem::itemForRole(MenuRole role) noexcept
+{
+    return s_roleItems.value(int(role), nullptr);
+}
 
 // Builds the Heaven object of the type currently implied by the item's flags, with all its
 // properties applied and (for actions/toggles) the click signal wired to Qt's activated().
@@ -69,6 +79,9 @@ HNMenuItem::HNMenuItem(HNData *data) : QPlatformMenuItem(), m_data(data)
 
 HNMenuItem::~HNMenuItem()
 {
+    if (m_menuRole != NoRole && s_roleItems.value(int(m_menuRole)) == this)
+        s_roleItems.remove(int(m_menuRole));
+
     if (menu)
         menu->action = nullptr;
 
@@ -79,6 +92,7 @@ HNMenuItem::~HNMenuItem()
         if (iClone->subMenu)
             destroyObjectAndChildren(iClone->subMenu->object);
 
+        hnUnlinkSubMenu(iClone);
         iClone->object.reset();
         clones.removeLast();
         delete iClone;
@@ -144,6 +158,7 @@ void HNMenuItem::setMenu(QPlatformMenu *mm)
             hnSetParent(iClone->object.get(), nullptr); // remove the plain item from the tree
 
             iClone->subMenu = m->createClone(parent);
+            iClone->subMenu->parentItem = iClone;
 
             if (before)
                 iClone->subMenu->object->insertBefore(before);
@@ -199,8 +214,18 @@ void HNMenuItem::setIsSeparator(bool isSeparator)
     m_data->commit();
 }
 
-void HNMenuItem::setRole(MenuRole)
+void HNMenuItem::setRole(MenuRole role)
 {
+    if (m_menuRole == role)
+        return;
+
+    if (m_menuRole != NoRole && s_roleItems.value(int(m_menuRole)) == this)
+        s_roleItems.remove(int(m_menuRole));
+
+    m_menuRole = role;
+
+    if (role != NoRole)
+        s_roleItems.insert(int(role), this);
 }
 
 #if QT_CONFIG(shortcut)
@@ -236,7 +261,8 @@ void HNMenuItem::setChecked(bool isChecked)
         if (auto *t = dynamic_cast<HNToggle*>(iClone->object.get()))
             t->setChecked(isChecked);
 
-    m_data->commit();
+    m_data->commitNow(); // toggle state is latency-sensitive
+
 }
 
 void HNMenuItem::setEnabled(bool enabled)

@@ -36,6 +36,10 @@ public:
     ItemClone *createClone();
     std::shared_ptr<HNClient> heaven() const;
 
+    /// Returns the most recently registered menu item carrying @p role (About/Preferences/Quit…),
+    /// or nullptr. Used to route the default app-menu events from Heaven to the app's own actions.
+    static HNMenuItem *itemForRole(MenuRole role) noexcept;
+
     HNMenu *menu = nullptr;
 
     std::string m_icon; // freedesktop icon name
@@ -53,6 +57,7 @@ public:
 private:
     mutable HNData *m_data;
     quintptr m_tag = 0;
+    MenuRole m_menuRole = NoRole;
 };
 
 QT_END_NAMESPACE

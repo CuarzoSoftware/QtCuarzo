@@ -42,11 +42,13 @@ HNMenu::~HNMenu()
                 child->clones.removeOne(iClone);
                 if (iClone->subMenu)
                     destroyObjectAndChildren(iClone->subMenu->object);
+                hnUnlinkSubMenu(iClone);
                 iClone->object.reset();
                 delete iClone;
             }
         }
 
+        hnUnlinkSubMenu(mClone);
         mClone->object.reset();
         clones.removeLast();
         delete mClone;
@@ -80,7 +82,10 @@ void HNMenu::insertMenuItem(QPlatformMenuItem *menuItem, QPlatformMenuItem *befo
             iClone->menu = mClone;
 
             if (i->menu)
+            {
                 iClone->subMenu = i->menu->createClone(mClone->object.get());
+                iClone->subMenu->parentItem = iClone;
+            }
         }
 
         HNObject *bObject = b ? placedObject(findItemClone(b, mClone)) : nullptr;
@@ -113,6 +118,7 @@ void HNMenu::removeMenuItem(QPlatformMenuItem *menuItem)
         if (iClone->subMenu)
             destroyObjectAndChildren(iClone->subMenu->object);
 
+        hnUnlinkSubMenu(iClone);
         iClone->object.reset();
         delete iClone;
     }
@@ -260,6 +266,9 @@ MenuClone *HNMenu::createClone(HNObject *parent)
             ItemClone *iClone = child->createClone();
             iClone->menu = clone;
             iClone->subMenu = mClone;
+
+            if (mClone)
+                mClone->parentItem = iClone;
 
             if (child->menu)
                 continue;

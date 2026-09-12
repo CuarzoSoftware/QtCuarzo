@@ -4,6 +4,7 @@
 #include <qpa/qplatformthemeplugin.h>
 #include <memory>
 #include "Common.h"
+#include <CZ/Core/CZObject.h>
 
 namespace CZ { class CZCore; }
 
@@ -26,6 +27,9 @@ private slots:
 private:
     std::shared_ptr<CZ::CZCore> m_core;
     std::shared_ptr<HNClient> m_heaven;
+    // Owns the Heaven app-menu signal subscriptions (About/Settings/Quit). Declared after m_heaven
+    // so it is destroyed first, unsubscribing before the client's signals go away.
+    CZ::CZObject m_heavenListener;
 };
 
 QT_END_NAMESPACE
