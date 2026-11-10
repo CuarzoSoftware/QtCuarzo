@@ -19,8 +19,8 @@ qt6_dep = dependency('qt6',
     private_headers : true)
 
 wayland_client_dep = dependency('wayland-client')
-cz_core_dep        = dependency('cz-core')
-cz_heaven_dep      = dependency('cz-heaven-client')
+cz_core_dep        = dependency('cz-core', fallback : ['cz-core', 'cz_core_dep'])
+cz_heaven_dep      = dependency('cz-heaven-client', fallback : ['cz-heaven', 'cz_heaven_client_dep'])
 
 # ------------------------- lvr-private-handle protocol -------------------------
 
