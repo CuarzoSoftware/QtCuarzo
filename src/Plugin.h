@@ -13,7 +13,10 @@ QT_BEGIN_NAMESPACE
 class PlatformThemePlugin : public QPlatformThemePlugin
 {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID QPlatformThemeFactoryInterface_iid FILE "cuarzo-platformtheme.json")
+    // The literal QPlatformThemeFactoryInterface_iid (qpa/qplatformthemeplugin.h): moc can't expand
+    // the macro where it doesn't get Qt's private include paths (e.g. Debian / Raspberry Pi OS),
+    // failing with "Parse error at IID"
+    Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QPA.QPlatformThemeFactoryInterface.5.1" FILE "cuarzo-platformtheme.json")
 
 public:
     PlatformThemePlugin(QObject *parent = nullptr);
