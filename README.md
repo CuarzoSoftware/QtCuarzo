@@ -1,5 +1,7 @@
 # Qt Platform Theme for CuarzoOS
 
+> This project is part of the [Cuarzo Framework](https://github.com/CuarzoSoftware/Cuarzo). Follow the instructions there to build and install it.
+
 Allows Qt apps to automatically send their menus to [Firmament](https://github.com/CuarzoSoftware/Firmament) (the global menu bar for ***Cuarzo OS***) using the [Heaven](https://github.com/CuarzoSoftware/Heaven) client library.
 
 ![](https://i.imgur.com/StKlGbk.png)
