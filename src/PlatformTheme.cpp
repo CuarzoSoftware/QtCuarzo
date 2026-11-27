@@ -4,6 +4,7 @@
 #include <QFont>
 #include <QVariant>
 #include <QCoreApplication>
+#include <CZ/Core/CZMouseSettings.h>
 
 PlatformTheme::PlatformTheme(std::shared_ptr<HNClient> heaven)
 {
@@ -15,6 +16,10 @@ PlatformTheme::~PlatformTheme() {}
 
 QVariant PlatformTheme::themeHint(QPlatformTheme::ThemeHint hintType) const
 {
+    // As chosen in System Settings (Mouse). Qt asks when the app starts
+    if (hintType == QPlatformTheme::MouseDoubleClickInterval)
+        return QVariant(int(CZ::CZMouseSettings::DoubleClickMs()));
+
     return QPlatformTheme::themeHint(hintType);
 }
 
